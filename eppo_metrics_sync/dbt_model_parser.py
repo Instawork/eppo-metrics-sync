@@ -59,6 +59,13 @@ class DbtModelParser():
         for column in self.model.get('columns'):
             self._parse_one_column(column)
 
+        # add a default `null` fact if no facts are specified, named after the model
+        if not self.eppo_facts:
+            self.eppo_facts.append({
+                "name": self.model["name"],
+                "column": None,
+                "description": "Fact from the count of rows in the model"
+            })
     
     def validate(self):
 
