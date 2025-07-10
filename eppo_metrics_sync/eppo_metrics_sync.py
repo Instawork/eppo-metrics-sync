@@ -19,7 +19,6 @@ class EppoMetricsSync:
     def __init__(
             self,
             directory,
-            schema_type='eppo',
             dbt_model_prefix=None,
             sync_prefix=None
     ):
@@ -27,7 +26,6 @@ class EppoMetricsSync:
         self.fact_sources = []
         self.metrics = []
         self.validation_errors = []
-        self.schema_type = schema_type
         self.dbt_model_prefix = dbt_model_prefix
         self.sync_prefix = sync_prefix
 
@@ -46,7 +44,7 @@ class EppoMetricsSync:
 
     def load_dbt_yaml(self, path):
         if not self.dbt_model_prefix:
-            raise ValueError('Must specify dbt_model_prefix when schema_type=dbt-model')
+            return
         yaml_data = load_yaml(path)
         models = yaml_data.get('models')
         if models:
@@ -74,21 +72,14 @@ class EppoMetricsSync:
                 if file.endswith(".yaml") or file.endswith(".yml"):
 
                     yaml_path = os.path.join(root, file)
-
-                    if self.schema_type == 'eppo':
-                        valid = self.yaml_is_valid(yaml_path)
-                        if valid['passed']:
-                            self.load_eppo_yaml(yaml_path)
-                        else:
-                            self.validation_errors.append(
-                                f"Schema violation in {yaml_path}: \n{valid['error_message']}"
-                            )
-
-                    elif self.schema_type == 'dbt-model':
-                        self.load_dbt_yaml(yaml_path)
-
+                    valid = self.yaml_is_valid(yaml_path)
+                    if valid['passed']:
+                        self.load_eppo_yaml(yaml_path)
                     else:
-                        raise ValueError(f'Unexpected schema_type: {self.schema_type}')
+                        self.validation_errors.append(
+                            f"Schema violation in {yaml_path}: \n{valid['error_message']}"
+                        )
+                    self.load_dbt_yaml(yaml_path)
 
         if len(self.fact_sources) == 0 and len(self.metrics) == 0:
             raise ValueError(

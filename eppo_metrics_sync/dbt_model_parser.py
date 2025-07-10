@@ -39,16 +39,24 @@ class DbtModelParser():
             if 'eppo_timestamp' in tags:
                 self.eppo_timestamp = column["name"]
 
-            if 'eppo_fact' in tags:
+            fact_entities = [t for t in tags if 'eppo_fact' in t]
+            if fact_entities: 
+                info = fact_entities[0].split(':')
+                name = info[1] if len(info) >= 2 else column["name"]
+                desired_change = info[2] if len(info) == 3 else None
                 self.eppo_facts.append({
-                    "name": column["name"],
+                    "name": name,
                     "column": column["name"],
-                    "description": column.get("description", "")
+                    "description": column.get("description", ""),
+                    "desired_change": desired_change,
                 })
-            
-            if 'eppo_property' in tags:
+
+            property_entities = [t for t in tags if 'eppo_property' in t] 
+            if property_entities:
+                info = property_entities[0].split(':')
+                name = info[1] if len(info) == 2 else column["name"]
                 self.eppo_properties.append({
-                    "name": column["name"],
+                    "name": name,
                     "column": column["name"],
                     "description": column.get("description", "")
                 })
@@ -60,11 +68,16 @@ class DbtModelParser():
             self._parse_one_column(column)
 
         # add a default `null` fact if no facts are specified, named after the model
-        if not self.eppo_facts:
+        eppo_row_fact = self.model.get("meta", {}).get("eppo_row_fact")
+        if eppo_row_fact is not None:
+            name = eppo_row_fact.get("name", self.model["name"])
+            description = eppo_row_fact.get("description", "Fact based on the count of rows in the model")
+            change = eppo_row_fact.get("desired_change")
             self.eppo_facts.append({
-                "name": self.model["name"],
+                "name": name,
                 "column": None,
-                "description": "Fact from the count of rows in the model"
+                "desired_change": change,
+                "description": description,
             })
     
     def validate(self):
@@ -112,23 +125,24 @@ class DbtModelParser():
     
     def format(self):
 
-        entity_clause = '\n  , '.join([e['column'] for e in self.eppo_entities])
-        fact_clause = '\n  , '.join([f['column'] for f in self.eppo_facts])
-        property_clause = '\n  , '.join([p['column'] for p in self.eppo_properties])
+        entity_clause = '\n,'.join([e['column'] for e in self.eppo_entities])
+        fact_clause = '\n,'.join([f['column'] for f in self.eppo_facts if f['column']])
+        property_clause = '\n,'.join([p['column'] for p in self.eppo_properties])
+        entity_clause_sql = f",\n{entity_clause}" if entity_clause else ""
+        fact_clause_sql = f",\n{fact_clause}" if fact_clause else ""
+        property_clause_sql = f", {property_clause}" if property_clause else ""
 
         formatted_sql = \
          f"""
         select
-            {self.eppo_timestamp}
-            , {entity_clause}
-            , {fact_clause}
-            , {property_clause}
+            {self.eppo_timestamp}{entity_clause_sql}{fact_clause_sql}{property_clause_sql}
         from 
             {self.dbt_model_prefix}.{self.model['name']}
         """
 
+        fact_source_name = self.model.get("meta", {}).get("eppo_fact_source_name", self.model["name"])
         self.eppo_fact_source = {
-            "name": self.model["name"],
+            "name":fact_source_name,
             "sql": formatted_sql,
             "timestamp_column": self.eppo_timestamp,
             "entities": self.eppo_entities,
